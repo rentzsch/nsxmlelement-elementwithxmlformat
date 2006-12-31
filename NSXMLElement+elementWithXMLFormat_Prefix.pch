@@ -1,0 +1,7 @@
+//
+// Prefix header for all source files of the 'NSXMLElement+elementWithXMLFormat' target in the 'NSXMLElement+elementWithXMLFormat' project.
+//
+
+#ifdef __OBJC__
+    #import <Foundation/Foundation.h>
+#endif
