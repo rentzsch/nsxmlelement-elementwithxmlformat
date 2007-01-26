@@ -96,7 +96,8 @@ static size_t unicharlen(const unichar *it) {
 																				kCFAllocatorNull);
 				NSAssert(formattedStr, @"CFStringCreateWithCharactersNoCopy failed");
 				if ('%' == *(resultIt-1)) {
-					[formattedStr getCharacters:--resultIt];
+                    resultIt -= 2;
+					[formattedStr getCharacters:resultIt];
 					resultIt += [formattedStr length];
 				} else {
 					NSString *escapedStr = (id)CFXMLCreateStringByEscapingEntities(kCFAllocatorDefault,
