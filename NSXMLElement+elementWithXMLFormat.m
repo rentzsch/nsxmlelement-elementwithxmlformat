@@ -21,6 +21,7 @@ static size_t unicharlen(const unichar *it) {
 
 + (id)elementWithXMLFormat:(NSString*)format_, ... {
 	NSParameterAssert(format_);
+	NSParameterAssert([format_ length]);
 	
 	NSError			*error = nil;
 					[[[NSThread currentThread] threadDictionary] removeObjectForKey:elementWithXMLFormatErrorKey];
@@ -28,7 +29,8 @@ static size_t unicharlen(const unichar *it) {
 	
 	//	Setup for efficiently walking format_.
 	size_t		formatLength = [format_ length];
-	unichar		formatBuffer[formatLength];
+    NSMutableData *formatBufferData = [NSMutableData dataWithLength:formatLength*sizeof(unichar)];
+	unichar		*formatBuffer = [formatBufferData mutableBytes];
 				[format_ getCharacters:formatBuffer];
 	unichar		*formatIt, *formatEnd = formatBuffer + formatLength;
 	
@@ -73,16 +75,18 @@ static size_t unicharlen(const unichar *it) {
 	[delimitedFormat release];
 	
 	size_t		formattedStringLength = [formattedString length];
-	unichar		formattedBuffer[formattedStringLength];
+    NSMutableData *formattedBufferData = [NSMutableData dataWithLength:formattedStringLength*sizeof(unichar)];
+	unichar		*formattedBuffer = [formattedBufferData mutableBytes];
 				[formattedString getCharacters:formattedBuffer]; [formattedString release];
 	unichar		*formattedIt = formattedBuffer, *formattedEnd = formattedBuffer + formattedStringLength;
 	
 	size_t		resultBufferLength = formatLength + formattedStringLength;
-	unichar		resultBuffer[resultBufferLength];
+    NSMutableData *resultBufferData = [NSMutableData dataWithLength:resultBufferLength*sizeof(unichar)];
+	unichar		*resultBuffer = [resultBufferData mutableBytes];
 	unichar		*resultIt = resultBuffer, *resultEnd = resultBuffer + resultBufferLength;
 	
 	for (formatIt = formatBuffer; formatIt != formatEnd; formatIt++) {
-		assert(resultIt != resultEnd);
+		assert(resultIt < resultEnd);
 		if (('%' == *formatIt) && ((formatIt+1) != formatEnd)) {
 			if ('%' == *(formatIt+1)) {
 				*resultIt++ = '%';
@@ -128,7 +132,13 @@ static size_t unicharlen(const unichar *it) {
 	
 	if (error)
 		[[[NSThread currentThread] threadDictionary] setObject:error forKey:elementWithXMLFormatErrorKey];
-	
+
+    // For GC.  See:
+    // http://lists.apple.com/archives/cocoa-dev/2008/Jun/msg00619.html
+    [formatBufferData self];
+    [formattedBufferData self];
+    [resultBufferData self];
+    
 	return result;
 }
 
