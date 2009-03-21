@@ -1,6 +1,6 @@
 /*******************************************************************************
 	NSXMLElement+elementWithXMLFormat.h
-		Copyright (c) 2006 Jonathan 'Wolf' Rentzsch: <http://rentzsch.com>
+		Copyright (c) 2006-2008 Jonathan 'Wolf' Rentzsch: <http://rentzsch.com>
 		Some rights reserved: <http://opensource.org/licenses/mit-license.php>
 
 	***************************************************************************/
