@@ -3,6 +3,8 @@
 		Copyright (c) 2006-2009 Jonathan 'Wolf' Rentzsch: <http://rentzsch.com>
 		Some rights reserved: <http://opensource.org/licenses/mit-license.php>
 
+	Note: this code uses C99 variable-length automatic arrays.
+
 	***************************************************************************/
 
 #import "NSXMLElement+elementWithXMLFormat.h"
@@ -26,18 +28,20 @@ static size_t unicharlen(const unichar *it) {
 	NSXMLElement	*result = nil;
 	
 	//	Setup for efficiently walking format_.
-	size_t		formatLength = [format_ length];
-    NSMutableData *formatBufferData = [NSMutableData dataWithLength:formatLength*sizeof(unichar)];
-	unichar		*formatBuffer = [formatBufferData mutableBytes];
-				[format_ getCharacters:formatBuffer];
-	unichar		*formatIt, *formatEnd = formatBuffer + formatLength;
+	size_t          formatUnicharCount = [format_ length];
+    size_t          formatByteCount = formatUnicharCount * sizeof(unichar);
+    NSMutableData   *formatBufferData = [NSMutableData dataWithLength:formatByteCount];
+	unichar         *formatBuffer = [formatBufferData mutableBytes];
+                    [format_ getCharacters:formatBuffer];
+	unichar         *formatIt, *formatEnd = formatBuffer + formatUnicharCount;
 	
 	//	Reduce the format string to just the formatters, with NUL characters in-between them.
 	//	Example: @"foo %d bar %@ baz %f" => @"%d\0%@\0%f\0".
 	//	We'll use these NUL characters later as formatted output element delimiters.
-	unichar		delimitedFormatBuffer[formatLength * 2]; // Handles worst case where format string is nothing but formatters.
+    size_t      delimitedFormatBufferUnicharCount = formatUnicharCount * 2; // Handles worst case where format string is nothing but formatters.
+	unichar		delimitedFormatBuffer[delimitedFormatBufferUnicharCount];
 	unichar		*delimitedFormatIt = delimitedFormatBuffer;
-	unichar		*delimitedFormatEnd = delimitedFormatBuffer + (formatLength * 2);
+	unichar		*delimitedFormatEnd = delimitedFormatBuffer + (delimitedFormatBufferUnicharCount);
 	for (formatIt = formatBuffer; formatIt != formatEnd; formatIt++) {
 		assert(delimitedFormatIt != delimitedFormatEnd);
 		if (('%' == *formatIt) && ((formatIt+1) != formatEnd)) {
@@ -72,23 +76,19 @@ static size_t unicharlen(const unichar *it) {
 	
 	[delimitedFormat release];
 	
-	size_t		formattedStringLength = [formattedString length];
-    NSMutableData *formattedBufferData = [NSMutableData dataWithLength:formattedStringLength*sizeof(unichar)];
-	unichar		*formattedBuffer = [formattedBufferData mutableBytes];
-				[formattedString getCharacters:formattedBuffer]; [formattedString release];
-	unichar		*formattedIt = formattedBuffer, *formattedEnd = formattedBuffer + formattedStringLength;
-	
-	size_t		resultBufferLength = formatLength + formattedStringLength;
-    NSMutableData *resultBufferData = [NSMutableData dataWithLength:resultBufferLength*sizeof(unichar)];
-	unichar		*resultBuffer = [resultBufferData mutableBytes];
-	unichar		*resultIt = resultBuffer, *resultEnd = resultBuffer + resultBufferLength;
+	size_t          formattedStringUnicharCount = [formattedString length];
+    size_t          formattedStringByteCount = formattedStringUnicharCount * sizeof(unichar);
+    NSMutableData   *formattedBufferData = [NSMutableData dataWithLength:formattedStringByteCount];
+	unichar         *formattedBuffer = [formattedBufferData mutableBytes];
+                    [formattedString getCharacters:formattedBuffer]; [formattedString release];
+	unichar         *formattedIt = formattedBuffer, *formattedEnd = formattedBuffer + formattedStringUnicharCount;
+    
+    NSMutableString *resultString = [[NSMutableString alloc] initWithCapacity:formatUnicharCount + formattedStringUnicharCount];
 	
 	for (formatIt = formatBuffer; formatIt != formatEnd; formatIt++) {
-		assert(resultIt < resultEnd);
 		if (('%' == *formatIt) && ((formatIt+1) != formatEnd)) {
 			if ('%' == *(formatIt+1)) {
-				*resultIt++ = '%';
-				*resultIt++ = '%';
+                [resultString appendString:@"%"];
 			} else {
 				assert(formattedIt != formattedEnd);
 				size_t formattedStrLen = unicharlen(formattedIt);
@@ -97,19 +97,17 @@ static size_t unicharlen(const unichar *it) {
 																				formattedStrLen,
 																				kCFAllocatorNull);
 				NSAssert(formattedStr, @"CFStringCreateWithCharactersNoCopy failed");
-				if ('%' == *(resultIt-1)) {
-                    resultIt -= 2;
-					[formattedStr getCharacters:resultIt];
-					resultIt += [formattedStr length];
+
+				if ('%' == [resultString characterAtIndex:[resultString length]-1]) {
+                    // Found a "%%%@": remove the "%" we've already written and write out the string without XML escaping.
+                    [resultString deleteCharactersInRange:NSMakeRange([resultString length]-1, 1)];
+                    [resultString appendString:formattedStr];
 				} else {
 					NSString *escapedStr = (id)CFXMLCreateStringByEscapingEntities(kCFAllocatorDefault,
 																				   (CFStringRef)formattedStr,
 																				   NULL);
 					NSAssert(escapedStr, @"CFXMLCreateStringByEscapingEntities failed");
-					
-					[escapedStr getCharacters:resultIt];
-					resultIt += [escapedStr length];
-					
+                    [resultString appendString:escapedStr];
 					[escapedStr release];
 				}
 				formattedIt += formattedStrLen + 1;
@@ -117,13 +115,10 @@ static size_t unicharlen(const unichar *it) {
 			}
 			formatIt++;
 		} else {
-			*resultIt++ = *formatIt;
+            [resultString appendFormat:@"%C", *formatIt];
 		}
 	}
-	NSString *resultString = (id)CFStringCreateWithCharactersNoCopy(kCFAllocatorDefault,
-																	resultBuffer,
-																	resultIt - resultBuffer,
-																	kCFAllocatorNull);
+    
 	//NSLog(@"resultString:%@", resultString);
 	result = [[[NSXMLElement alloc] initWithXMLString:resultString error:&error] autorelease];
 	[resultString release];
@@ -131,11 +126,10 @@ static size_t unicharlen(const unichar *it) {
 	if (error)
 		[[[NSThread currentThread] threadDictionary] setObject:error forKey:elementWithXMLFormatErrorKey];
 
-    // For GC.  See:
+    // For GC. See:
     // http://lists.apple.com/archives/cocoa-dev/2008/Jun/msg00619.html
     [formatBufferData self];
     [formattedBufferData self];
-    [resultBufferData self];
     
 	return result;
 }
